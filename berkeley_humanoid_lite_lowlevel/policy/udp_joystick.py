@@ -1,14 +1,29 @@
 # Copyright (c) 2025, The Berkeley Humanoid Lite Project Developers.
 
+"""
+UDP Joystick Controller Module for Berkeley Humanoid Lite
+
+This module implements UDP-based controllers for the Berkeley Humanoid Lite robot,
+supporting both gamepad and keyboard input devices. It handles command broadcasting
+over UDP for robot control modes and movement velocities.
+"""
+
 import socket
 import struct
 import time
 import threading
+from typing import Dict, Union, Optional
 
 from inputs import get_gamepad
 
 
 class StickEntry:
+    """
+    Constants for gamepad button and axis mappings.
+
+    This class defines the standard mapping for various gamepad controls,
+    including analog sticks, triggers, d-pad, and buttons.
+    """
     AXIS_X_L = "ABS_X"
     AXIS_Y_L = "ABS_Y"
     AXIS_TRIGGER_L = "ABS_Z"
@@ -18,7 +33,7 @@ class StickEntry:
 
     BTN_HAT_X = "ABS_HAT0X"
     BTN_HAT_Y = "ABS_HAT0Y"
-    
+
     BTN_A = "BTN_SOUTH"
     BTN_B = "BTN_EAST"
     BTN_X = "BTN_NORTH"
@@ -32,15 +47,29 @@ class StickEntry:
 
 
 class UdpController:
+    """
+    Base class for UDP-based robot controllers.
+
+    This class handles UDP communication for sending control commands to the robot.
+    It maintains a command state and broadcasts it at a specified frequency.
+    """
     def __init__(self,
                  publish_address: str = "172.28.0.255",
                  publish_port: int = 10011,
                  publish_frequency: float = 20
-                 ):
+                 ) -> None:
+        """
+        Initialize the UDP controller.
+
+        Args:
+            publish_address (str): UDP broadcast address
+            publish_port (int): UDP port number
+            publish_frequency (float): Command publishing frequency in Hz
+        """
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
         self.publish_address = (publish_address, publish_port)
-        
+
         self.publish_frequency = publish_frequency
 
         self.commands = {
@@ -94,10 +123,9 @@ class UdpJoystick(UdpController):
                  publish_address: str = "172.28.0.255",
                  publish_port: int = 10011,
                  publish_frequency: float = 20
-                 ):
+                 ) -> None:
         super().__init__(publish_address, publish_port, publish_frequency)
-
-        self.stick_states = { key: 0 for key in StickEntry.__dict__.values() }
+        self.stick_states: Dict[str, int] = {key: 0 for key in StickEntry.__dict__.values()}
 
     def _update_controller(self) -> None:
         events = get_gamepad()
@@ -119,19 +147,19 @@ class UdpJoystick(UdpController):
 
         mode_switch = 0
 
-        # enter rl control mode
+        # Enter RL control mode (A + Right Bumper)
         if self.stick_states.get(StickEntry.BTN_A) and self.stick_states.get(StickEntry.BTN_BUMPER_R):
             mode_switch = 3
-        
-        # enter init mode
+
+        # Enter init mode (A + Left Bumper)
         if self.stick_states.get(StickEntry.BTN_A) and self.stick_states.get(StickEntry.BTN_BUMPER_L):
             mode_switch = 2
-        
-        # enter idle mode
+
+        # Enter idle mode (B or Left/Right Thumbstick)
         if self.stick_states.get(StickEntry.BTN_B) or self.stick_states.get(StickEntry.BTN_THUMB_L) or self.stick_states.get(StickEntry.BTN_THUMB_R):
             mode_switch = 1
-        
-        self.commands["mode_switch"] = mode_switch    
+
+        self.commands["mode_switch"] = mode_switch
 
 try:
     from pynput import keyboard
@@ -147,7 +175,13 @@ try:
 
             self.ctrl_pressed = False
 
-        def _on_key_press(self, key: keyboard.Key | keyboard.KeyCode | None) -> None:
+        def _on_key_press(self, key: Optional[Union[keyboard.Key, keyboard.KeyCode]]) -> None:
+            """
+            Handle key press events.
+
+            Args:
+                key: The key that was pressed
+            """
             if key is None:
                 return
 
@@ -171,7 +205,7 @@ try:
                         self.commands["velocity_y"] = 0.0
                         self.commands["velocity_yaw"] = 0.0
                 return
-            
+
             if type(key) == keyboard.KeyCode:
                 if key.char == "2" and self.ctrl_pressed:
                     # request to switch to rl control mode
@@ -191,11 +225,10 @@ try:
                     case Key.space:
                         self.commands["mode_switch"] = 0
                 return
-            
+
             if type(key) == keyboard.KeyCode:
                 if key.char == "1" or key.char == "2":
                     self.commands["mode_switch"] = 0
-                
 
         def _start_controller(self) -> None:
             self.listener = keyboard.Listener(on_press=self._on_key_press, on_release=self._on_key_release)
@@ -212,5 +245,5 @@ if __name__ == "__main__":
         command_controller.run()
     except KeyboardInterrupt:
         print("Keyboard interrupt")
-    
+
     command_controller.stop()
