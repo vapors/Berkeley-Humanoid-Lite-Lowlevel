@@ -10,11 +10,38 @@ over UDP for robot control modes and movement velocities.
 
 import threading
 from typing import Dict
-
 from inputs import get_gamepad
 
 
 class XInputEntry:
+    """
+   Joystick (ShanWan PC/PS3/Android) has 6 axes (X, Y, Z, Rz, Hat0X, Hat0Y)
+    and 13 buttons (BtnA, BtnB, BtnC, BtnX, BtnY, BtnZ, BtnTL, BtnTR, BtnTL2, BtnTR2, BtnSelect, BtnStart, BtnMode).
+
+    #**VAPORS** Mapping for generic gamepad"""
+    AXIS_X_L = "ABS_X"
+    AXIS_Y_L = "ABS_Y"
+    AXIS_TRIGGER_L = "BTN_SELECT"
+    AXIS_X_R = "ABS_Z"
+    AXIS_Y_R = "ABS_RZ"
+    AXIS_TRIGGER_R = "BTN_START"
+
+    BTN_HAT_X = "ABS_HAT0X"
+    BTN_HAT_Y = "ABS_HAT0Y"
+
+    BTN_A = "BTN_C"
+    BTN_B = "BTN_EAST"
+    BTN_X = "BTN_NORTH"
+    BTN_Y = "BTN_SOUTH"
+    BTN_BUMPER_L = "BTN_WEST"
+    BTN_BUMPER_R = "BTN_Z"
+    BTN_THUMB_L = "BTN_TL"
+    BTN_THUMB_R = "BTN_TR"
+    BTN_BACK = "BTN_TL2"
+    BTN_START = "BTN_TR2"
+
+
+class XInputEntry_stock:
     """
     Constants for gamepad button and axis mappings.
 
@@ -60,7 +87,7 @@ class Se2Gamepad:
             "velocity_x": 0.0,
             "velocity_y": 0.0,
             "velocity_yaw": 0.0,
-            "mode_switch": 0,
+            "mode_switch": 3,
         }
 
     def reset(self) -> None:
@@ -87,6 +114,13 @@ class Se2Gamepad:
             self._states[event.code] = event.state
 
         self._update_command_buffer()
+   
+    def normalize(self, val: int, center: int = 127, span: int = 128, deadzone: float = 0.05) -> float:
+        normalized = (val - center) / float(span)
+        if abs(normalized) < deadzone:
+            return 0.0
+        return max(-1.0, min(1.0, normalized))
+    
 
     def _update_command_buffer(self) -> Dict[str, float]:
         velocity_x = self._states.get(XInputEntry.AXIS_Y_L)
@@ -94,16 +128,20 @@ class Se2Gamepad:
         velocity_yaw = self._states.get(XInputEntry.AXIS_X_L)
 
         if velocity_x is not None:
-            self.commands["velocity_x"] = velocity_x / -32768.0
+            self.commands["velocity_x"] = self.normalize(velocity_x) * -1  # invert forward/backward
+            print(velocity_x)
         if velocity_y is not None:
-            self.commands["velocity_y"] = velocity_y / -32768.0
+            self.commands["velocity_y"] = self.normalize(velocity_y) 
+            print(velocity_y)
         if velocity_yaw is not None:
-            self.commands["velocity_yaw"] = velocity_yaw / -32768.0
+            self.commands["velocity_yaw"] = self.normalize(velocity_yaw) 
+            print(velocity_yaw)
 
         mode_switch = 0
 
         # Enter RL control mode (A + Right Bumper)
-        if self._states.get(XInputEntry.BTN_A) and self._states.get(XInputEntry.BTN_BUMPER_R):
+        if self._states.get(XInputEntry.BTN_A):
+            print(self._states.get(XInputEntry.BTN_A))
             mode_switch = 3
 
         # Enter init mode (A + Left Bumper)
